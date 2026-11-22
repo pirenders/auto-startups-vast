@@ -476,7 +476,7 @@ mkdir -p "$IMAGES_PATH"
 if [ ! -f "$BASE_DIR/_hf_download.sh" ]; then
     echo "  Fetching _hf_download.sh from GitHub..."
     curl -sSL -o "$BASE_DIR/_hf_download.sh" \
-        "https://raw.githubusercontent.com/muneesraja/auto-startups-vast/main/workflows/setup/_hf_download.sh" || true
+        "https://raw.githubusercontent.com/pirenders/auto-startups-vast/main/workflows/setup/_hf_download.sh" || true
 fi
 if [ -s "$BASE_DIR/_hf_download.sh" ]; then
     source "$BASE_DIR/_hf_download.sh"
