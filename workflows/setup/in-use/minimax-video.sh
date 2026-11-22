@@ -763,6 +763,13 @@ hf_download "JOKER141/H3-Dance-LoRA_Beat-Sync-Concept-Slider" "Dance Beat-Sync S
 # Upstream name has spaces — keep it, plus a space-free alias for graphs and shell tooling.
 link_alias "$BASE_DIR/loras/Dance Beat-Sync Slider.safetensors" "$BASE_DIR/loras/Dance_Beat-Sync_Slider.safetensors"
 
+# ── RelayVSR x2 video super-resolution (Comfy-Org/RelayVSR): every workflow selection ──
+step "relayvsr_x2_lightx2v_int8_convrot.safetensors (RelayVSR x2 diffusion model, Comfy-Org/RelayVSR)..."
+hf_download "Comfy-Org/RelayVSR" "diffusion_models/relayvsr_x2_lightx2v_int8_convrot.safetensors" "$BASE_DIR"
+
+step "relayvsr_flash_vae_x2_fp32.safetensors (RelayVSR x2 flash VAE, Comfy-Org/RelayVSR)..."
+hf_download "Comfy-Org/RelayVSR" "vae/relayvsr_flash_vae_x2_fp32.safetensors" "$BASE_DIR"
+
 # ── Latent upscaler: BUNNY SelfLift + Pika Regen 2K ──
 if want bunny || want regen2k; then
     step "minimax_h3_latent_upscaler_3d_fp16.safetensors (Latent Upscaler 3D, nested repo)..."
