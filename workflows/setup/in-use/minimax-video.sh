@@ -354,6 +354,29 @@ else
     echo "  ⚠️  Using system Python"
 fi
 
+# ── Phase 0a: torchaudio must match the existing torch (T8 audio pack imports it) ──
+# Preinstalled system torch (e.g. Lium 2.12.0+cu130) can ship without torchaudio, and a
+# same-version torchaudio wheel may not exist yet. Install the closest build <= torch with
+# --no-deps so torch itself is never replaced (T8 only uses torchaudio.functional).
+if ! $COMFY_PYTHON -c "import torchaudio" >/dev/null 2>&1; then
+    echo "==> torchaudio missing — installing a build that matches the existing torch..."
+    read -r _TV _CU <<<"$($COMFY_PYTHON -c 'import torch; v=torch.__version__.split("+"); print(v[0], (v[1] if len(v)>1 else "cpu"))')"
+    _MAJ=${_TV%%.*}; _REST=${_TV#*.}; _MIN=${_REST%%.*}
+    _TA_OK=0
+    for _m in $(seq "$_MIN" -1 $((_MIN > 3 ? _MIN - 3 : 0))); do
+        if $COMFY_PIP install -q --no-deps "torchaudio==${_MAJ}.${_m}.*" --index-url "https://download.pytorch.org/whl/${_CU}" >/dev/null 2>&1 \
+           && $COMFY_PYTHON -c "import torch, torchaudio; torchaudio.functional.resample(torch.zeros(1,480), 48000, 16000)" >/dev/null 2>&1; then
+            _TA_OK=1; break
+        fi
+    done
+    if [ "$_TA_OK" = 1 ]; then
+        echo "  ✅ torchaudio $($COMFY_PYTHON -c 'import torchaudio; print(torchaudio.__version__)') installed (torch $_TV kept)"
+    else
+        echo "  ❌ Could not install a torchaudio compatible with torch $_TV ($_CU) — the T8 audio nodes will fail to import."
+        exit 1
+    fi
+fi
+
 # ── Phase 0b: refresh ComfyUI python deps after install or core upgrade ──
 if [ "${UPGRADED:-0}" = "1" ] && [ -f "$COMFYUI_DIR/requirements.txt" ]; then
     echo "==> Phase 0b: Installing ComfyUI requirements..."
@@ -867,6 +890,19 @@ elif [ -x "$LAUNCHER" ]; then
 else
     echo "  ⚠️  No supervisor and no launcher at $LAUNCHER — start ComfyUI manually:"
     echo "      cd $COMFYUI_DIR && $COMFY_PYTHON main.py $H3_FLAGS"
+fi
+
+# ── Verify every custom node pack imported (ComfyUI only warns and keeps serving) ──
+if [ "$COMFY_READY" = "1" ]; then
+    _FAILED=$(grep -a "(IMPORT FAILED)" /workspace/comfyui.log 2>/dev/null | sed -E 's/.*\(IMPORT FAILED\): *//' || true)
+    if [ -n "$_FAILED" ]; then
+        echo "  ❌ Custom node packs failed to import — workflows using them will show missing nodes:"
+        printf '      %s\n' $_FAILED
+        grep -a -B1 "Cannot import" /workspace/comfyui.log | tail -10
+        echo "❌ Setup finished with broken node packs (fix the error above, then restart ComfyUI)."
+        exit 1
+    fi
+    echo "  ✅ All custom node packs imported"
 fi
 
 # ── Lium: Expose ComfyUI via Cloudflare Quick Tunnel (trycloudflare) ──
