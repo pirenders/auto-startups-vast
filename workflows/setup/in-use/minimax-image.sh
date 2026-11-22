@@ -116,6 +116,46 @@ else
     echo "  ℹ️  ComfyUI not found — will install fresh into $COMFYUI_DIR"
 fi
 
+# ── Model summary helper ──
+resolve_diffusion_file() {
+    case "$DIFFUSION_CHOICE" in
+        int8) DIFFUSION_FILE="diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors"; DIFFUSION_DESC="minimax_h3_image_pruned_int8_convrot.safetensors (~21.0 GB)" ;;
+        w4a8) DIFFUSION_FILE="diffusion_models/minimax_h3_image_pruned_w4a8.safetensors";         DIFFUSION_DESC="minimax_h3_image_pruned_w4a8.safetensors (~12.6 GB)" ;;
+        bf16) DIFFUSION_FILE="diffusion_models/minimax_h3_image_pruned_bf16.safetensors";         DIFFUSION_DESC="minimax_h3_image_pruned_bf16.safetensors (~40.2 GB)" ;;
+        *)
+            echo "  ⚠️  Unknown --diffusion='$DIFFUSION_CHOICE' — falling back to int8"
+            DIFFUSION_CHOICE="int8"
+            DIFFUSION_FILE="diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors"
+            DIFFUSION_DESC="minimax_h3_image_pruned_int8_convrot.safetensors (~21.0 GB)"
+            ;;
+    esac
+}
+
+print_download_summary() {
+    resolve_diffusion_file
+    local wf_preview
+    wf_preview="$(normalize_workflows "${WORKFLOWS_ARG:-all}")"
+    [ -z "${wf_preview// /}" ] && wf_preview="$ALL_WORKFLOWS"
+    echo "==> Download summary ($HF_REPO)"
+    echo "    Platform:        $PLATFORM ($COMFYUI_DIR)"
+    echo "    Workflows:       $wf_preview"
+    echo "    Diffusion model: $DIFFUSION_DESC"
+    echo "    Image VAE:       minimax_h3_image_vae_fp16.safetensors (~1.2 GB)"
+    case "$TEXT_ENC_CHOICE" in
+        int8)  echo "    Text encoder:    qwen3vl_32b_minimax_h3_int8_convrot.safetensors (~27.1 GB)" ;;
+        nvfp4) echo "    Text encoder:    qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors (~15.7 GB)" ;;
+        both)  echo "    Text encoders:   qwen3vl_32b_minimax_h3_int8_convrot.safetensors (~27.1 GB) + nvfp4_awq (~15.7 GB)" ;;
+        *)     echo "    Text encoder:    qwen3vl_32b_minimax_h3_int8_convrot.safetensors (~27.1 GB)" ;;
+    esac
+    case "$PE_CHOICE" in
+        9b)   echo "    Prompt enhancer: qwen3.5_9b_w4a8_gptq.safetensors (~7.3 GB)" ;;
+        27b)  echo "    Prompt enhancer: qwen3.8_27b_minimax_h3_image_pe_w4a8_gptq.safetensors (~17.3 GB)" ;;
+        both) echo "    Prompt enhancer: qwen3.5_9b_w4a8_gptq.safetensors (~7.3 GB) + qwen3.8_27b_pe (~17.3 GB)" ;;
+        none) echo "    Prompt enhancer: none (skipped)" ;;
+        *)    echo "    Prompt enhancer: qwen3.5_9b_w4a8_gptq.safetensors (~7.3 GB)" ;;
+    esac
+}
+
 # ── Interactive prompts (--interactive) ──
 if [ "$INTERACTIVE" = "1" ]; then
     echo "==> Interactive mode — collecting HF_TOKEN"
@@ -140,72 +180,75 @@ if [ "$INTERACTIVE" = "1" ]; then
         fi
     fi
 
-    if [ -z "$PLATFORM_ARG" ] && [ -t 0 ]; then
-        read -rp "  🖥️  Platform (lium/vast/runpod) [$PLATFORM]: " _PLAT_INPUT || true
-        if [ -n "${_PLAT_INPUT:-}" ]; then
-            PLATFORM="$(echo "$_PLAT_INPUT" | tr 'A-Z' 'a-z')"
-            [ "$PLATFORM" = "runpod" ] && [ -d "/workspace/runpod-slim" ] \
-                && COMFYUI_DIR="/workspace/runpod-slim/ComfyUI" \
-                || COMFYUI_DIR="/workspace/ComfyUI"
-        fi
-        unset _PLAT_INPUT
+    print_download_summary
+    _MODIFY_INPUT=""
+    if [ -t 0 ]; then
+        read -rp "  ▶️  Press Enter to continue, or type M to modify selections [Enter/M]: " _MODIFY_INPUT || true
     fi
 
-    echo "==> Interactive mode — choose workflows to provision"
-    echo "    t2i   MiniMax H3 Image Text-to-Image  (image_minimax_h3_image_t2i.json)"
-    echo "    edit  MiniMax H3 Image Edit           (image_minimax_h3_image_edit.json)"
-    if [ -t 0 ]; then
-        read -rp "  🧩 Workflows (comma-separated, or 'all') [${WORKFLOWS_ARG:-all}]: " _WF_INPUT || true
-        [ -n "${_WF_INPUT:-}" ] && WORKFLOWS_ARG="$_WF_INPUT"
-        unset _WF_INPUT
-    fi
+    case "${_MODIFY_INPUT:-}" in
+        m|M|modify|MODIFY)
+            if [ -z "$PLATFORM_ARG" ] && [ -t 0 ]; then
+                read -rp "  🖥️  Platform (lium/vast/runpod) [$PLATFORM]: " _PLAT_INPUT || true
+                if [ -n "${_PLAT_INPUT:-}" ]; then
+                    PLATFORM="$(echo "$_PLAT_INPUT" | tr 'A-Z' 'a-z')"
+                    [ "$PLATFORM" = "runpod" ] && [ -d "/workspace/runpod-slim" ] \
+                        && COMFYUI_DIR="/workspace/runpod-slim/ComfyUI" \
+                        || COMFYUI_DIR="/workspace/ComfyUI"
+                fi
+                unset _PLAT_INPUT
+            fi
 
-    echo "==> Interactive mode — choose diffusion model quantization ($HF_REPO)"
-    echo "    1) minimax_h3_image_pruned_int8_convrot.safetensors  (~21.0 GB) [default]"
-    echo "    2) minimax_h3_image_pruned_w4a8.safetensors          (~12.6 GB)"
-    echo "    3) minimax_h3_image_pruned_bf16.safetensors          (~40.2 GB)"
-    if [ -t 0 ]; then
-        read -rp "  🎨 Diffusion model [1]: " _D_INPUT || true
-        case "${_D_INPUT:-1}" in
-            2|w4a8) DIFFUSION_CHOICE="w4a8" ;;
-            3|bf16) DIFFUSION_CHOICE="bf16" ;;
-            1|int8|"") DIFFUSION_CHOICE="int8" ;;
-            *) echo "  ⚠️  Unrecognised choice '$_D_INPUT' — keeping $DIFFUSION_CHOICE" ;;
-        esac
-        unset _D_INPUT
-    fi
+            echo "==> Choose workflows to provision"
+            echo "    t2i   MiniMax H3 Image Text-to-Image  (image_minimax_h3_image_t2i.json)"
+            echo "    edit  MiniMax H3 Image Edit           (image_minimax_h3_image_edit.json)"
+            read -rp "  🧩 Workflows (comma-separated, or 'all') [${WORKFLOWS_ARG:-all}]: " _WF_INPUT || true
+            [ -n "${_WF_INPUT:-}" ] && WORKFLOWS_ARG="$_WF_INPUT"
+            unset _WF_INPUT
 
-    echo "==> Interactive mode — choose main text encoder (Qwen3-VL 32B)"
-    echo "    1) qwen3vl_32b_minimax_h3_int8_convrot.safetensors   (~27.1 GB) [default]"
-    echo "    2) qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors      (~15.7 GB)"
-    echo "    3) both                                              (~42.8 GB)"
-    if [ -t 0 ]; then
-        read -rp "  🧠 Text encoder [1]: " _TE_INPUT || true
-        case "${_TE_INPUT:-1}" in
-            2|nvfp4) TEXT_ENC_CHOICE="nvfp4" ;;
-            3|both)  TEXT_ENC_CHOICE="both" ;;
-            1|int8|"") TEXT_ENC_CHOICE="int8" ;;
-            *) echo "  ⚠️  Unrecognised choice '$_TE_INPUT' — keeping $TEXT_ENC_CHOICE" ;;
-        esac
-        unset _TE_INPUT
-    fi
+            echo "==> Choose diffusion model quantization ($HF_REPO)"
+            echo "    1) minimax_h3_image_pruned_int8_convrot.safetensors  (~21.0 GB) [default]"
+            echo "    2) minimax_h3_image_pruned_w4a8.safetensors          (~12.6 GB)"
+            echo "    3) minimax_h3_image_pruned_bf16.safetensors          (~40.2 GB)"
+            read -rp "  🎨 Diffusion model [1]: " _D_INPUT || true
+            case "${_D_INPUT:-1}" in
+                2|w4a8) DIFFUSION_CHOICE="w4a8" ;;
+                3|bf16) DIFFUSION_CHOICE="bf16" ;;
+                1|int8|"") DIFFUSION_CHOICE="int8" ;;
+                *) echo "  ⚠️  Unrecognised choice '$_D_INPUT' — keeping $DIFFUSION_CHOICE" ;;
+            esac
+            unset _D_INPUT
 
-    echo "==> Interactive mode — choose Prompt Enhancer (TextGenerateV2)"
-    echo "    1) qwen3.5_9b_w4a8_gptq.safetensors                      (~7.3 GB)  [default, wired in workflows]"
-    echo "    2) qwen3.8_27b_minimax_h3_image_pe_w4a8_gptq.safetensors (~17.3 GB) [official recommended PE]"
-    echo "    3) both                                                  (~24.6 GB)"
-    echo "    4) none                                                  (skip)"
-    if [ -t 0 ]; then
-        read -rp "  ✨ Prompt enhancer [1]: " _PE_INPUT || true
-        case "${_PE_INPUT:-1}" in
-            2|27b)  PE_CHOICE="27b" ;;
-            3|both) PE_CHOICE="both" ;;
-            4|none) PE_CHOICE="none" ;;
-            1|9b|"") PE_CHOICE="9b" ;;
-            *) echo "  ⚠️  Unrecognised choice '$_PE_INPUT' — keeping $PE_CHOICE" ;;
-        esac
-        unset _PE_INPUT
-    fi
+            echo "==> Choose main text encoder (Qwen3-VL 32B)"
+            echo "    1) qwen3vl_32b_minimax_h3_int8_convrot.safetensors   (~27.1 GB) [default]"
+            echo "    2) qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors      (~15.7 GB)"
+            echo "    3) both                                              (~42.8 GB)"
+            read -rp "  🧠 Text encoder [1]: " _TE_INPUT || true
+            case "${_TE_INPUT:-1}" in
+                2|nvfp4) TEXT_ENC_CHOICE="nvfp4" ;;
+                3|both)  TEXT_ENC_CHOICE="both" ;;
+                1|int8|"") TEXT_ENC_CHOICE="int8" ;;
+                *) echo "  ⚠️  Unrecognised choice '$_TE_INPUT' — keeping $TEXT_ENC_CHOICE" ;;
+            esac
+            unset _TE_INPUT
+
+            echo "==> Choose Prompt Enhancer (TextGenerateV2)"
+            echo "    1) qwen3.5_9b_w4a8_gptq.safetensors                      (~7.3 GB)  [default, wired in workflows]"
+            echo "    2) qwen3.8_27b_minimax_h3_image_pe_w4a8_gptq.safetensors (~17.3 GB) [official recommended PE]"
+            echo "    3) both                                                  (~24.6 GB)"
+            echo "    4) none                                                  (skip)"
+            read -rp "  ✨ Prompt enhancer [1]: " _PE_INPUT || true
+            case "${_PE_INPUT:-1}" in
+                2|27b)  PE_CHOICE="27b" ;;
+                3|both) PE_CHOICE="both" ;;
+                4|none) PE_CHOICE="none" ;;
+                1|9b|"") PE_CHOICE="9b" ;;
+                *) echo "  ⚠️  Unrecognised choice '$_PE_INPUT' — keeping $PE_CHOICE" ;;
+            esac
+            unset _PE_INPUT
+            ;;
+    esac
+    unset _MODIFY_INPUT
 fi
 
 BASE_DIR="$COMFYUI_DIR/models"
@@ -218,16 +261,7 @@ if [ -z "${SELECTED_WORKFLOWS// /}" ]; then
     SELECTED_WORKFLOWS="$ALL_WORKFLOWS"
 fi
 
-case "$DIFFUSION_CHOICE" in
-    int8) DIFFUSION_FILE="diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors" ;;
-    w4a8) DIFFUSION_FILE="diffusion_models/minimax_h3_image_pruned_w4a8.safetensors" ;;
-    bf16) DIFFUSION_FILE="diffusion_models/minimax_h3_image_pruned_bf16.safetensors" ;;
-    *)
-        echo "  ⚠️  Unknown --diffusion='$DIFFUSION_CHOICE' — falling back to int8"
-        DIFFUSION_CHOICE="int8"
-        DIFFUSION_FILE="diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors"
-        ;;
-esac
+resolve_diffusion_file
 
 echo "  ✅ Platform:        $PLATFORM"
 echo "  ✅ Workflows:       $SELECTED_WORKFLOWS"
