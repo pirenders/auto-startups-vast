@@ -429,6 +429,7 @@ fi
 if want bunny; then
     install_node https://github.com/slmonker/selflift-Avatar
     install_node https://github.com/yichengup/ComfyUI-YCNodes-MiniMax-H3
+    install_node https://github.com/Fannovel16/ComfyUI-Frame-Interpolation
 fi
 # Pika Regen 2K: Get/SetNode + chunk-FFN (KJNodes), Easy-Use cleanup nodes, tiled upscale, Open-H3 LoRA/VAE
 if want regen2k; then
@@ -446,6 +447,7 @@ install_node https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite
 echo "==> Installing node dependencies..."
 for repo in $INSTALLED_NODE_DIRS; do
     REQ="$CUSTOM_NODES_DIR/$repo/requirements.txt"
+    [ -f "$REQ" ] || REQ="$CUSTOM_NODES_DIR/$repo/requirements-no-cupy.txt"
     if [ -f "$REQ" ]; then
         echo "  Installing $repo deps..."
         $COMFY_PIP install -q -r "$REQ" 2>&1 | tail -5 || true
@@ -460,6 +462,9 @@ if want bunny; then
     grep -q "H3SigmaRefiner" "$CUSTOM_NODES_DIR/ComfyUI-YCNodes-MiniMax-H3/py/h3_sigma_refiner.py" 2>/dev/null \
         && echo "  ✅ H3SigmaRefiner present" \
         || echo "  ⚠️  ComfyUI-YCNodes-MiniMax-H3 missing H3SigmaRefiner"
+    [ -d "$CUSTOM_NODES_DIR/ComfyUI-Frame-Interpolation" ] \
+        && echo "  ✅ ComfyUI-Frame-Interpolation installed (RIFE VFI)" \
+        || echo "  ⚠️  ComfyUI-Frame-Interpolation missing"
 fi
 if want regen2k; then
     [ -d "$CUSTOM_NODES_DIR/Comfyui-MMH3-UltimateUpscale" ] \
