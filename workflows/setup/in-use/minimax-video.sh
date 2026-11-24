@@ -524,23 +524,24 @@ if [ -r /proc/cpuinfo ] && ! grep -qw avx2 /proc/cpuinfo; then
 fi
 
 # ── ComfyUI launch flags for H3 on 24GB ──
-H3_FLAGS="--lowvram --disable-pinned-memory"
+H3_FLAG_ITEMS=("--lowvram" "--disable-pinned-memory" "--fast fp16_accumulation")
 if ( cd "$COMFYUI_DIR" && "$COMFY_PYTHON" main.py --help 2>&1 ) | grep -q -- "--disable-comfy-compiler"; then
-    H3_FLAGS="$H3_FLAGS --disable-comfy-compiler"
+    H3_FLAG_ITEMS+=("--disable-comfy-compiler")
     echo "  ✅ build ships the Comfy model compiler — adding --disable-comfy-compiler"
 else
     echo "  ℹ️  build has no --disable-comfy-compiler — omitting it"
 fi
+H3_FLAGS="${H3_FLAG_ITEMS[*]}"
 
 # ── Vast.ai: ComfyUI supervisord command line flag injection ──
 if [ -f /opt/supervisor-scripts/comfyui.sh ]; then
     WRAP=/opt/supervisor-scripts/comfyui.sh
     MISSING=""
-    for FLAG in $H3_FLAGS; do
-        grep -q -- "$FLAG" "$WRAP" || MISSING="$MISSING $FLAG"
+    for FLAG in "${H3_FLAG_ITEMS[@]}"; do
+        grep -qF -- "$FLAG" "$WRAP" || MISSING="$MISSING $FLAG"
     done
     if [ -z "$MISSING" ]; then
-        echo "  ✅ supervisor launch line already has:$H3_FLAGS"
+        echo "  ✅ supervisor launch line already has: $H3_FLAGS"
     else
         echo "  📥 Adding missing H3 flags to the supervisor launch line:$MISSING"
         cp "$WRAP" "${WRAP}.bak.$(date +%Y%m%d_%H%M%S)"
