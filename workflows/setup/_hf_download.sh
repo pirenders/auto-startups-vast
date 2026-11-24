@@ -47,8 +47,17 @@ else
   echo "✅ HF token available"
 fi
 
-# Enable Xet high-performance transfer (replaces deprecated hf_transfer)
-export HF_XET_HIGH_PERFORMANCE=1
+# Xet high-performance transfer buffers heavily in RAM — on small containers
+# (e.g. Lium 15GB cgroup, no swap) it gets OOM-killed mid 27GB download.
+# Enable it only when the memory limit is >= 32GB.
+_MEM_LIMIT=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null || echo max)
+case "$_MEM_LIMIT" in max|"") _MEM_LIMIT=$(awk '/MemTotal/{print $2*1024}' /proc/meminfo) ;; esac
+if [ "${_MEM_LIMIT:-0}" -ge 34359738368 ] 2>/dev/null; then
+  export HF_XET_HIGH_PERFORMANCE=1
+else
+  unset HF_XET_HIGH_PERFORMANCE
+  echo "ℹ️  Memory limit $((_MEM_LIMIT/1073741824))GB — Xet high-performance mode off (avoids OOM)"
+fi
 
 # Download function: hf_download REPO_ID FILENAME LOCAL_DIR
 hf_download() {
@@ -65,7 +74,6 @@ hf_download() {
 import os, time, sys
 from huggingface_hub import hf_hub_download
 
-os.environ['HF_XET_HIGH_PERFORMANCE'] = '1'
 
 token = "$HF_TOKEN" or None
 repo_id = "$repo_id"

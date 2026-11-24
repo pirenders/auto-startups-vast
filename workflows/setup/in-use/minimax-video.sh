@@ -637,6 +637,24 @@ fi
 fi
 
 # ── Create model & input directories ──
+# ── Lium: keep weights on the big volume ──
+# Lium's container overlay (/, so /workspace) is often only ~26GB while the Lium
+# volume (/root, /lium-cipher) has ~95GB+. ~75GB of weights cannot fit on the
+# overlay, so move models/ onto the volume and symlink it back.
+if [ "$PLATFORM" = "lium" ] && [ ! -L "$BASE_DIR" ]; then
+    LIUM_VOL="${LIUM_VOLUME_PATH:-/root}"
+    ROOT_FREE_GB=$(df -BG --output=avail "$COMFYUI_DIR" 2>/dev/null | tail -1 | tr -dc 0-9)
+    VOL_FREE_GB=$(df -BG --output=avail "$LIUM_VOL" 2>/dev/null | tail -1 | tr -dc 0-9)
+    if [ -n "$ROOT_FREE_GB" ] && [ -n "$VOL_FREE_GB" ] && [ "$ROOT_FREE_GB" -lt 80 ] && [ "$VOL_FREE_GB" -gt "$ROOT_FREE_GB" ]; then
+        echo "==> Overlay has ${ROOT_FREE_GB}GB free, $LIUM_VOL has ${VOL_FREE_GB}GB — moving models to $LIUM_VOL/comfy-models"
+        mkdir -p "$LIUM_VOL/comfy-models"
+        if [ -d "$BASE_DIR" ]; then
+            cp -a "$BASE_DIR"/. "$LIUM_VOL/comfy-models"/ && rm -rf "$BASE_DIR"
+        fi
+        ln -s "$LIUM_VOL/comfy-models" "$BASE_DIR"
+    fi
+fi
+
 echo "==> Creating model directories..."
 mkdir -p "$BASE_DIR"/{vae,vae_approx,text_encoders,diffusion_models,loras}
 mkdir -p "$IMAGES_PATH"
